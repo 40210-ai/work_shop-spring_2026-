@@ -1,51 +1,36 @@
 name: Update Student Directory
 
-# Trigger: runs every time a push happens on develop branch
 on:
   push:
     branches:
       - develop
     paths:
-      - 'students/**.html'   # Only runs when a student file is added/changed
+      - 'students/**.html'
 
 jobs:
   update-directory:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Checkout the repo
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      # Step 2: Scan students/ folder and update STUDENT_FILES in index.html
       - name: Update student list in index.html
         run: |
-          # Find all HTML files in students/ folder except _template.html
-          FILES=$(find students/ -name "*.html" ! -name "_template.html" | sort)
-
-          # Build the JavaScript array entries
-          ENTRIES=""
-          while IFS= read -r file; do
-            ENTRIES="${ENTRIES}      '${file}',\n"
-          done <<< "$FILES"
-
-          # Replace the STUDENT_FILES array content in index.html
-          # Find everything between REGISTRY_START and REGISTRY_END and replace it
           python3 - <<'PYTHON'
-          import re, os
+          import re, glob
 
           with open('index.html', 'r') as f:
               content = f.read()
 
-          # Find all student html files
-          import glob
           files = sorted(glob.glob('students/*.html'))
           files = [f for f in files if '_template' not in f]
-
-          # Build array lines
           lines = '\n'.join(f"      '{f}'," for f in files)
 
-          # Replace between REGISTRY_START and REGISTRY_END markers
           pattern = r'(// REGISTRY_START\n).*?(// REGISTRY_END)'
           replacement = f'// REGISTRY_START\n{lines}\n      // REGISTRY_END'
           new_content = re.sub(pattern, replacement, content, flags=re.DOTALL)
@@ -53,17 +38,14 @@ jobs:
           with open('index.html', 'w') as f:
               f.write(new_content)
 
-          print(f"Updated directory with {len(files)} students:")
-          for f in files:
-              print(f"  - {f}")
+          print(f"Updated: {len(files)} students")
           PYTHON
 
-      # Step 3: Commit and push the updated index.html
-      - name: Commit updated directory
+      - name: Commit and push
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git pull https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git develop
           git add index.html
-          git diff --cached --quiet || git commit -m "chore: auto-update student directory [skip ci]"
-          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:develop
+          git diff --cached --quiet && echo "No changes" && exit 0
+          git commit -m "chore: auto-update student directory [skip ci]"
+          git push origin develop
